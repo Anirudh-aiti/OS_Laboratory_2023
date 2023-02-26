@@ -22,10 +22,9 @@ typedef struct graphnode
 void print_graph(graphnode **nodes, int size)
 {
     for (int i = 0; i < size; ++i)
+    if (nodes[i] != NULL)
     {
         graphnode *p = nodes[i];
-        if (p == NULL)
-            break;
 
         cout << i << " : ";
         while (p != NULL)
@@ -35,12 +34,52 @@ void print_graph(graphnode **nodes, int size)
         }
         cout << endl;
     }
+    else break;
+}
+
+// function to add an edge to the nodes 2d array 
+graphnode * add_edge(graphnode ** nodes, graphnode * edges, int u, int v)
+{
+    // add the edge to the graph
+    graphnode a, b;
+    a.val = u;
+    b.next = NULL;
+    b.val = v;
+    b.next = NULL;
+    edges[0] = a;
+    edges[1] = b;
+
+    // add the new nodes to the adjacency lists of u and v
+    if (nodes[v] == NULL) 
+    {
+        nodes[v] = edges;
+        nodes[v]->next = NULL;
+    }
+    else
+    {
+        graphnode *p = nodes[v];
+        nodes[v] = edges;
+        nodes[v]->next = p;
+    }
+    if (nodes[u] == NULL) 
+    {
+        nodes[u] = edges + 1;
+        nodes[u]->next = NULL;
+    }
+    else
+    {
+        graphnode *p = nodes[u];
+        nodes[u] = edges + 1;
+        nodes[u]->next = p;
+    }
+
+    return edges + 2;
 }
 
 int main()
 {
     key_t key = 1001;
-    int shmid_1 = shmget(key, 40000, IPC_CREAT | 0666);
+    int shmid_1 = shmget(key, sizeof(graphnode *) * MAX_NODES, IPC_CREAT | 0666);
     if (shmid_1 == -1)
     {
         perror("error in shmget");
@@ -57,12 +96,12 @@ int main()
 
     //
     key_t key2 = 2000;
-    int shmid_2 = shmget(key2, 3000000, IPC_CREAT | 0666);
+    int shmid_2 = shmget(key2, sizeof(graphnode) * MAX_EDGES, IPC_CREAT | 0666);
     graphnode *edges = (graphnode *)shmat(shmid_2, NULL, 0);
 
     // initialize the nodes and edges
-    memset(nodes, 0, 40000);
-    memset(edges, 0, 3000000);
+    memset(nodes, 0, sizeof(graphnode *) * MAX_NODES);
+    memset(edges, 0, sizeof(graphnode) * MAX_EDGES);
 
     // open input file
     FILE *fp = fopen("facebook_combined.txt", "r");
@@ -83,41 +122,15 @@ int main()
         sscanf(str, "%d %d", &u, &v);
 
         // add the edge to the graph
-        graphnode a, b;
-        a.val = u;
-        b.next = NULL;
-        b.val = v;
-        b.next = NULL;
-        edges[0] = a;
-        edges[1] = b;
-
-        // add the new nodes to the adjacency lists of u and v
-        if (nodes[v] == NULL)
-            nodes[v] = edges;
-        else
-        {
-            graphnode *p = nodes[v];
-            nodes[v] = edges;
-            nodes[v]->next = p;
-        }
-        if (nodes[u] == NULL)
-            nodes[u] = edges + 1;
-        else
-        {
-            graphnode *p = nodes[u];
-            nodes[u] = edges + 1;
-            nodes[u]->next = p;
-        }
-
         // increment the edges pointer by 2 to point to the next edge nodes
-        edges = edges + 2;
+        edges = add_edge(nodes, edges, u, v);
     }
 
     // close the file
     fclose(fp);
     
     // print the graph
-    print_graph(nodes, 300000);
+    print_graph(nodes, MAX_NODES);
 
     // fork for producer
     if (fork() == 0)
