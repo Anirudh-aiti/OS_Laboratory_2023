@@ -160,7 +160,6 @@ int main()
     }
 
     // wait for all the processes to finish
-    // sleep(5);
 
     // detach the shared memory
     shmdt(nodes);
