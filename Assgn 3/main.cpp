@@ -6,6 +6,8 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <cstdlib>
+#include<string>
 
 using namespace std;
 
@@ -132,10 +134,15 @@ int main()
     // print the graph
     print_graph(nodes, MAX_NODES);
 
+    //key to string 
+    char shmid1_str[20],shmid2_str[20];
+    sprintf(shmid1_str,"%d",key);
+    sprintf(shmid2_str,"%d",key2);
+
     // fork for producer
     if (fork() == 0)
     {
-        char *args[] = {(char *)"./producer" , (char *)NULL } ;
+        char *args[] = {(char *)"./producer", shmid1_str, shmid2_str, (char *)NULL } ;
         execvp( *args , args ) ;
         exit(EXIT_SUCCESS);
     }
