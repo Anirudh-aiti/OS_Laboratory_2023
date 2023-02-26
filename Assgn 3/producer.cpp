@@ -215,6 +215,7 @@ int main(int argc, char *argv[])
     }
 
     print_graph(nodes,MAX_NODES);
+    
 
     shmdt(nodes);
     shmdt(edges);
