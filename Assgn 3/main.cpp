@@ -7,7 +7,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <cstdlib>
-#include<string>
+#include <string>
 
 using namespace std;
 
@@ -45,7 +45,7 @@ graphnode * add_edge(graphnode ** nodes, graphnode * edges, int u, int v)
     // add the edge to the graph
     graphnode a, b;
     a.val = u;
-    b.next = NULL;
+    a.next = NULL;
     b.val = v;
     b.next = NULL;
     edges[0] = a;
@@ -78,7 +78,20 @@ graphnode * add_edge(graphnode ** nodes, graphnode * edges, int u, int v)
     return edges + 2;
 }
 
-int main()
+// function to get the degree of a node 
+int degree(graphnode ** nodes, int u)
+{
+    int deg = 0;
+    graphnode *p = nodes[u];
+    while (p != NULL)
+    {
+        deg++;
+        p = p->next;
+    }
+    return deg;
+}
+
+signed main(int argc, char const *argv[])
 {
     key_t key = 1001;
     int shmid_1 = shmget(key, sizeof(graphnode *) * MAX_NODES, IPC_CREAT | 0666);
