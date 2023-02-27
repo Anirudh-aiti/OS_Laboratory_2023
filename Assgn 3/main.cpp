@@ -8,115 +8,93 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <string>
+#include <fstream>
 
 using namespace std;
 
-typedef struct graphnode
+typedef struct graphedge
 {
-    int val;
-    struct graphnode *next;
-} graphnode;
+    int src, dest;
+} graphedge;
 
 #define NUM_CONSUMERS 10
 #define MAX_NODES 10000
-#define MAX_EDGES 1000000
+#define MAX_EDGES 500000
 
-void print_graph(graphnode **nodes, int size)
+// function to print the graph in "output.txt"
+void print_graph(map <int, vector <int>> m)
 {
-    for (int i = 0; i < size; ++i)
-    if (nodes[i] != NULL)
+    ofstream out("output.txt");
+    for (auto i = m.begin(); i != m.end(); ++i)
     {
-        graphnode *p = nodes[i];
-
-        cout << i << " : ";
-        while (p != NULL)
-        {
-            cout << p->val << " ";
-            p = p->next;
-        }
-        cout << endl;
+        out << i->first << " : ";
+        for (auto j = i->second.begin(); j != i->second.end(); ++j) out << *j << " ";
+        out << endl;
     }
-    else break;
+    out.close();
 }
 
-// function to add an edge to the nodes 2d array 
-graphnode * add_edge(graphnode ** nodes, graphnode * edges, int u, int v)
+// function to make the graph
+map <int, vector <int>> make_graph(graphedge * edges, int * info)
+{
+    map <int, vector <int>> graph;
+    for (int i = 0; i < info[1]; ++i)
+    {
+        graph[edges[i].src].push_back(edges[i].dest);
+        graph[edges[i].dest].push_back(edges[i].src);
+    }
+    info[0] = graph.size();
+    return graph;
+}
+
+// function to add an edge to the graph in the shared memory
+void add_edge(graphedge * edges, int u, int v, int *info)
 {
     // add the edge to the graph
-    graphnode a, b;
-    a.val = u;
-    a.next = NULL;
-    b.val = v;
-    b.next = NULL;
-    edges[0] = a;
-    edges[1] = b;
-
-    // add the new nodes to the adjacency lists of u and v
-    if (nodes[v] == NULL) 
-    {
-        nodes[v] = edges;
-        nodes[v]->next = NULL;
-    }
-    else
-    {
-        graphnode *p = nodes[v];
-        nodes[v] = edges;
-        nodes[v]->next = p;
-    }
-    if (nodes[u] == NULL) 
-    {
-        nodes[u] = edges + 1;
-        nodes[u]->next = NULL;
-    }
-    else
-    {
-        graphnode *p = nodes[u];
-        nodes[u] = edges + 1;
-        nodes[u]->next = p;
-    }
-
-    return edges + 2;
-}
-
-// function to get the degree of a node 
-int degree(graphnode ** nodes, int u)
-{
-    int deg = 0;
-    graphnode *p = nodes[u];
-    while (p != NULL)
-    {
-        deg++;
-        p = p->next;
-    }
-    return deg;
+    graphedge a;
+    a.src = u;
+    a.dest = v;
+    edges[info[1]] = a;
+    info[1]++;
 }
 
 signed main(int argc, char const *argv[])
 {
-    key_t key = 1001;
-    int shmid_1 = shmget(key, sizeof(graphnode *) * MAX_NODES, IPC_CREAT | 0666);
+    // create shared memory segment for edges
+    key_t key1 = 2000;
+    int shmid_1 = shmget(key1, sizeof(graphedge) * MAX_EDGES, IPC_CREAT | 0666);
     if (shmid_1 == -1)
     {
-        perror("error in shmget");
+        perror("Error in creating shared memory segment\n");
         exit(EXIT_FAILURE);
     }
-
-    // attach the shared memory
-    graphnode **nodes = (graphnode **)shmat(shmid_1, NULL, 0);
-    if (nodes == (graphnode **)-1)
+    graphedge *edges = (graphedge *)shmat(shmid_1, NULL, 0);
+    if (edges == (graphedge *)-1)
     {
-        perror("error in shmat");
+        perror("Error in attaching shared memory segment\n");
         exit(EXIT_FAILURE);
     }
 
-    //
-    key_t key2 = 2000;
-    int shmid_2 = shmget(key2, sizeof(graphnode) * MAX_EDGES, IPC_CREAT | 0666);
-    graphnode *edges = (graphnode *)shmat(shmid_2, NULL, 0);
+    // initialize the edges
+    memset(edges, 0, sizeof(graphedge) * MAX_EDGES);
 
-    // initialize the nodes and edges
-    memset(nodes, 0, sizeof(graphnode *) * MAX_NODES);
-    memset(edges, 0, sizeof(graphnode) * MAX_EDGES);
+    // create shared memory segment for info[] = {NUM_NODES, NUM_EDGES} 
+    key_t key2 = 2001;
+    int shmid_2 = shmget(key2, sizeof(int) * 2, IPC_CREAT | 0666);
+    if (shmid_2 == -1)
+    {
+        perror("Error in creating shared memory segment\n");
+        exit(EXIT_FAILURE);
+    }
+    int *info = (int *)shmat(shmid_2, NULL, 0);
+    if (info == (int *)-1)
+    {
+        perror("Error in attaching shared memory segment\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // initialize the info
+    memset(info, 0, sizeof(int) * 2);
 
     // open input file
     FILE *fp = fopen("facebook_combined.txt", "r");
@@ -138,24 +116,31 @@ signed main(int argc, char const *argv[])
 
         // add the edge to the graph
         // increment the edges pointer by 2 to point to the next edge nodes
-        edges = add_edge(nodes, edges, u, v);
+        add_edge(edges, u, v, info);
     }
 
     // close the file
     fclose(fp);
     
+    // make the graph
+    map <int, vector <int>> m = make_graph(edges, info);
+
     // print the graph
-    print_graph(nodes, MAX_NODES);
+    // print_graph(m);
+
+    // print info
+    cout << "Initial number of nodes: " << info[0] << endl;
+    cout << "Initial number of edges: " << info[1] << endl; 
 
     //key to string 
-    char shmid1_str[20],shmid2_str[20];
-    sprintf(shmid1_str,"%d",key);
-    sprintf(shmid2_str,"%d",key2);
+    char key1_str[20], key2_str[20];
+    sprintf(key1_str,"%d",key1);
+    sprintf(key2_str,"%d",key2);
 
     // fork for producer
     if (fork() == 0)
     {
-        char *args[] = {(char *)"./producer", shmid1_str, shmid2_str, (char *)NULL } ;
+        char *args[] = {(char *)"./producer", key1_str, key2_str, (char *)NULL } ;
         execvp( *args , args ) ;
         exit(EXIT_SUCCESS);
     }
@@ -166,16 +151,17 @@ signed main(int argc, char const *argv[])
         for (int i = 0; i < NUM_CONSUMERS; ++i)
         if (fork() == 0)
         {
-            char *args[] = {(char *)"./customer"  , NULL } ;
+            char *args[] = {(char *)"./consumer", key1_str, key2_str, (char *)NULL } ;
             execvp(*args , args ) ;
             exit(EXIT_SUCCESS);
         }
     }
 
     // wait for all the processes to finish
+    // sleep(20);
 
     // detach the shared memory
-    shmdt(nodes);
+    shmdt(info);
     shmdt(edges);
     shmctl(shmid_1, IPC_RMID, NULL);
     shmctl(shmid_2, IPC_RMID, NULL);
