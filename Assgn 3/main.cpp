@@ -151,14 +151,28 @@ signed main(int argc, char const *argv[])
         for (int i = 0; i < NUM_CONSUMERS; ++i)
         if (fork() == 0)
         {
-            char *args[] = {(char *)"./consumer", key1_str, key2_str, (char *)NULL } ;
-            execvp(*args , args ) ;
-            exit(EXIT_SUCCESS);
+            // get index of the consumer
+            char index[10];
+            sprintf(index, "%d", i);
+
+            // if a "-optimize" flag was passed, pass it to the consumer
+            if (argc == 2 && strcmp(argv[1], "-optimize") == 0)
+            {
+                char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"-optimize", (char *)NULL } ;
+                execvp(*args , args );
+                exit(EXIT_SUCCESS);
+            }
+            else 
+            {
+                char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)NULL } ;
+                execvp(*args , args ) ;
+                exit(EXIT_SUCCESS);
+            }
         }
     }
 
     // wait for all the processes to finish
-    // sleep(20);
+    for (int i = 0; i < NUM_CONSUMERS + 1; ++i) wait(NULL);
 
     // detach the shared memory
     shmdt(info);
