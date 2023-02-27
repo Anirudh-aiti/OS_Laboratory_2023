@@ -21,7 +21,7 @@ typedef struct graphedge
 // global variable to keep track of the current number of edges in the graph
 int prev_edges=0;
 
-// function to print the graph in "output.txt"
+// function to print the graph in "prod.txt"
 void print_graph(map <int, vector <int>> m)
 {
     ofstream out("prod.txt");
@@ -47,8 +47,8 @@ map <int, vector <int>> make_graph(graphedge * edges, int * info)
     return graph;
 }
 
-// update graph
-map <int, vector <int>> update_graph(map <int, vector <int>> graph, graphedge * edges, int * info)
+// update graph :: update the adjacency lists of the graph only for the new edges added
+void update_graph(map <int, vector <int>> &graph, graphedge * edges, int * info)
 {     
     cout << "Graph updated for edge index " << prev_edges << " to " << info[1] << endl;
     for (int i = prev_edges; i < info[1]; ++i)
@@ -58,7 +58,6 @@ map <int, vector <int>> update_graph(map <int, vector <int>> graph, graphedge * 
     }
     info[0] = graph.size();
     prev_edges = info[1];
-    return graph;
 }
 
 
@@ -73,16 +72,16 @@ void add_edge(graphedge * edges, int u, int v, int *info)
     info[1]++;
 }
 
-// function to generate a random number between min and max 
+// function to generate a random number between min and max (both inclusive)
 int rand_gen(int min, int max)
 {
     return min + (rand() % (max - min + 1));
 }
 
+// comparator function to sort the map
 bool compare(const pair<int, vector<int>>& a, const pair<int, vector<int>>& b) {
     return a.second.size() > b.second.size();
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -123,7 +122,7 @@ int main(int argc, char *argv[])
     map <int, vector <int>> graph;
 
     // make the graph
-    graph = update_graph(graph,edges, info);
+    update_graph(graph, edges, info);
 
     while(1){
 
@@ -146,7 +145,6 @@ int main(int argc, char *argv[])
         }
 
         // get the cumulative degree array
-
         vector<int> cum_dgre;
         cum_dgre.push_back(graph[0].size());
         for(int i=1; i < info[0] ; i++){
@@ -160,9 +158,9 @@ int main(int argc, char *argv[])
         //generate random number m 
         int m = rand_gen(10,30);
         // cout<<"m:"<<m<<endl;
-        for(int i=0; i < m ; i++ ){
 
-            // generate random number k 
+        for(int i=0; i < m ; i++ ){
+            // generate a random number k between 1 and 20 
             int k = rand_gen(1,20);
             // cout<<"k:"<<k<<endl;
 
@@ -178,7 +176,7 @@ int main(int argc, char *argv[])
         cout << "Producer:: Number of nodes after updation : " << info[0] << endl;
 
         // make the graph
-        graph = update_graph(graph, edges, info);
+        update_graph(graph, edges, info);
 
         // print the graph
         print_graph(graph);
