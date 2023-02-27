@@ -18,6 +18,9 @@ typedef struct graphedge
 #define MAX_NODES 10000
 #define MAX_EDGES 500000
 
+// global variable to keep track of the current number of edges in the graph
+int prev_edges=0;
+
 // function to print the graph in "output.txt"
 void print_graph(map <int, vector <int>> m)
 {
@@ -43,6 +46,21 @@ map <int, vector <int>> make_graph(graphedge * edges, int * info)
     info[0] = graph.size();
     return graph;
 }
+
+// update graph
+map <int, vector <int>> update_graph(map <int, vector <int>> graph, graphedge * edges, int * info)
+{     
+    cout << "Graph updated for edge index " << prev_edges << " to " << info[1] << endl;
+    for (int i = prev_edges; i < info[1]; ++i)
+    {
+        graph[edges[i].src].push_back(edges[i].dest);
+        graph[edges[i].dest].push_back(edges[i].src);
+    }
+    info[0] = graph.size();
+    prev_edges = info[1];
+    return graph;
+}
+
 
 // function to add an edge to the graph in the shared memory
 void add_edge(graphedge * edges, int u, int v, int *info)
@@ -102,9 +120,12 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    map <int, vector <int>> graph;
+
+    // make the graph
+    graph = update_graph(graph,edges, info);
+
     while(1){
-        // make the graph
-        map <int, vector <int>> graph = make_graph(edges, info);
 
         // print the graph
         //print_graph(graph);
@@ -113,7 +134,7 @@ int main(int argc, char *argv[])
         cout << "Producer:: Number of nodes: " << info[0] << endl;
         cout << "Producer:: Number of edges: " << info[1] << endl;
 
-        // get top 20 degreed nodes 
+        // get top 20 degreed nodes     
 
         int top[20] = {-1};
         vector<pair<int, vector<int>>> sorted_map(graph.begin(), graph.end());
@@ -130,20 +151,20 @@ int main(int argc, char *argv[])
         cum_dgre.push_back(graph[0].size());
         for(int i=1; i < info[0] ; i++){
             cum_dgre.push_back(graph[i].size()+cum_dgre[i-1]);
-            cout<<"dgre of "<<i<<":"<< cum_dgre[i] <<"\n";
+            // cout<<"cumulative dgre of "<<i<<":"<< cum_dgre[i] <<"\n";
         }
         
+        //prev_edges
 
+        
         //generate random number m 
         int m = rand_gen(10,30);
-        cout<<"m:"<<m<<endl;
+        // cout<<"m:"<<m<<endl;
         for(int i=0; i < m ; i++ ){
 
             // generate random number k 
             int k = rand_gen(1,20);
-            cout<<"k:"<<k<<endl;
-
-
+            // cout<<"k:"<<k<<endl;
 
             for(int j = 0; j < k; j++){
                 if(top[j]!=-1){
@@ -157,11 +178,10 @@ int main(int argc, char *argv[])
         cout << "Producer:: Number of nodes after updation : " << info[0] << endl;
 
         // make the graph
-        map <int, vector <int>> graph2 = make_graph(edges, info);
-
+        graph = update_graph(graph, edges, info);
 
         // print the graph
-        print_graph(graph2);
+        print_graph(graph);
         sleep(50);
     }
 
