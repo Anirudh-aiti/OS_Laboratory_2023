@@ -1,3 +1,17 @@
+/*
+    CS39002: Operating Systems Lab
+    Assignment : 3
+    File: main.cpp
+
+    Authors: Group 12
+        20CS10041 - Syam Manoj Kumar Paila
+        20CS30002 - Anirudh Aitipamula
+        20CS30018 - Ganjikunta Vijay Kumar
+        20CS30058 - Vineet Amol Pippal
+    
+    Main file which loads a graph from a file to a shared memory segment and 
+    spawns the Producer process and the Consumer processes.
+*/
 #include <bits/stdc++.h>
 #include <sys/ipc.h>
 #include <stdio.h>
@@ -20,6 +34,23 @@ typedef struct graphedge
 #define NUM_CONSUMERS 10
 #define MAX_NODES 10000
 #define MAX_EDGES 500000
+
+int pid[NUM_CONSUMERS + 1];
+
+// signal handler to handle SIGINT signal (Ctrl+C)
+// when main process is terminated by the user on pressing Ctrl+C, 
+// all the child processes are terminated and the shared memory segments are eventually deleted
+void signal_callback_handler(int signum) 
+{
+    cout << " Caught signal " << signum << "!" << endl;
+
+    // Terminate child processes`
+    for (int i = 0; i <= NUM_CONSUMERS; ++i)
+        kill(pid[i], SIGKILL);
+
+    // Move towards program termination
+    return;
+}
 
 // function to print the graph in "output.txt"
 void print_graph(map <int, vector <int>> m)
@@ -138,7 +169,8 @@ signed main(int argc, char const *argv[])
     sprintf(key2_str,"%d",key2);
 
     // fork for producer
-    if (fork() == 0)
+    pid[0] = fork();
+    if (pid[0] == 0)
     {
         char *args[] = {(char *)"./producer", key1_str, key2_str, (char *)NULL } ;
         execvp( *args , args ) ;
@@ -149,30 +181,35 @@ signed main(int argc, char const *argv[])
     {
         sleep(2);
         for (int i = 0; i < NUM_CONSUMERS; ++i)
-        if (fork() == 0)
         {
-            // get index of the consumer
-            char index[10];
-            sprintf(index, "%d", i);
+            pid[i + 1] = fork();
+            if (pid[i + 1]  == 0)
+            {
+                // get index of the consumer
+                char index[10];
+                sprintf(index, "%d", i);
 
-            // if a "-optimize" flag was passed, pass it to the consumer
-            if (argc == 2 && strcmp(argv[1], "-optimize") == 0)
-            {
-                char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"-optimize", (char *)NULL } ;
-                execvp(*args , args );
-                exit(EXIT_SUCCESS);
-            }
-            else 
-            {
-                char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)NULL } ;
-                execvp(*args , args ) ;
-                exit(EXIT_SUCCESS);
+                // if a "-optimize" flag was passed, pass it to the consumer
+                if (argc == 2 && strcmp(argv[1], "-optimize") == 0)
+                {
+                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"-optimize", (char *)NULL } ;
+                    execvp(*args , args );
+                    exit(EXIT_SUCCESS);
+                }
+                else 
+                {
+                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)NULL } ;
+                    execvp(*args , args ) ;
+                    exit(EXIT_SUCCESS);
+                }
             }
         }
     }
 
+    signal(SIGINT, signal_callback_handler);
+
     // wait for all the processes to finish
-    for (int i = 0; i < NUM_CONSUMERS + 1; ++i) wait(NULL);
+    for (int i = 0; i < 11; ++i) waitpid(pid[i], NULL, 0);
 
     // detach the shared memory
     shmdt(info);
