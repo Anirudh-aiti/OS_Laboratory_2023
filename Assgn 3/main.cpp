@@ -192,13 +192,13 @@ signed main(int argc, char const *argv[])
                 // if a "-optimize" flag was passed, pass it to the consumer
                 if (argc == 2 && strcmp(argv[1], "-optimize") == 0)
                 {
-                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"-optimize", (char *)NULL } ;
+                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"1", (char *)NULL } ;
                     execvp(*args , args );
                     exit(EXIT_SUCCESS);
                 }
                 else 
                 {
-                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)NULL } ;
+                    char *args[] = {(char *)"./consumer", key1_str, key2_str, index, (char *)"0", (char *)NULL } ;
                     execvp(*args , args ) ;
                     exit(EXIT_SUCCESS);
                 }

@@ -12,3 +12,4 @@ mo:
 
 clean:
 	rm -f main producer consumer
+	rm -f consumer-*.txt
