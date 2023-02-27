@@ -34,7 +34,7 @@ map<int, vector<int>> make_graph(graphedge *edges, int *info)
 
 void update_graph(map<int, vector<int>> &graph, graphedge *edges, int *info, int prev_edges)
 {
-    cout << "Graph updated for edge index " << prev_edges << " to " << info[1] << endl;
+    // cout << "Graph updated for edge index " << prev_edges << " to " << info[1] << endl;
     for (int i = prev_edges; i < info[1]; ++i)
     {
         graph[edges[i].src].push_back(edges[i].dest);
@@ -87,10 +87,10 @@ void dijkstra_algo(int src, map<int, vector<int>> &graph, int index, int *info, 
     }
 
     // print out the shortest distances and paths to each node
-    cout << "Shortest paths from node " << src << ":\n";
+    // cout << "Shortest paths from node " << src << ":\n";
     for (int i = 0; i < num_nodes; i++)
     {
-        cout << "Node " << i << ": ";
+        // cout << "Node " << i << ": ";
     }
 
     ofstream out;
@@ -166,10 +166,14 @@ int main(int argc, char *argv[])
     int num_nodes = info[0];
     int num_edges = 0;
 
+    int loop_num = 0;
+
     while (true)
     {
         if (num_edges != info[1])
         {
+            loop_num++;
+            // cout << "Consumer : " << index << " " << "loop num : " << loop_num << " started" << endl;
             update_graph(graph, edges, info, num_edges);
             num_edges = info[1];
             num_nodes = info[0];
@@ -188,11 +192,17 @@ int main(int argc, char *argv[])
 
             for (int i = start; i <= end; ++i)
                 dijkstra_algo(i, graph, index, info, start, end);
+
+            ofstream out;
+            char filename[20];
+            sprintf(filename, "consumer-%d.txt", index);
+            out.open(filename, std::ios::app);
+            out << "Completed consumer - " << index << endl;
+
+            // cout << "Consumer : " << index << " " << "loop num : " << loop_num << " ended" << endl;
         }
         sleep(30);
     }
-
-    cout << "Completed consumer - " << index << endl;
 
     shmdt(info);
     shmdt(edges);
