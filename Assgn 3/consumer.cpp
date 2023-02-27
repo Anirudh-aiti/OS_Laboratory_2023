@@ -6,8 +6,6 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <cstdlib>
-#include <string>
 #include <fstream>
 
 using namespace std;
@@ -16,206 +14,188 @@ using namespace std;
 #define MAX_EDGES 1000000
 #define NUM_CONSUMERS 10
 
-typedef struct graphnode
+typedef struct graphedge
 {
-    int val;
-    struct graphnode *next;
-} graphnode;
+    int src, dest;
+} graphedge;
 
-// graphnode *add_edge(graphnode **nodes, graphnode *edges, int u, int v)
-// {
-//     // add the edge to the graph
-//     graphnode a, b;
-//     a.val = u;
-//     b.next = NULL;
-//     b.val = v;
-//     b.next = NULL;
-//     edges[0] = a;
-//     edges[1] = b;
-
-//     // add the new nodes to the adjacency lists of u and v
-//     if (nodes[v] == NULL)
-//     {
-//         nodes[v] = edges;
-//         nodes[v]->next = NULL;
-//     }
-//     else
-//     {
-//         graphnode *p = nodes[v];
-//         nodes[v] = edges;
-//         nodes[v]->next = p;
-//     }
-//     if (nodes[u] == NULL)
-//     {
-//         nodes[u] = edges + 1;
-//         nodes[u]->next = NULL;
-//     }
-//     else
-//     {
-//         graphnode *p = nodes[u];
-//         nodes[u] = edges + 1;
-//         nodes[u]->next = p;
-//     }
-
-//     return edges + 2;
-// }
-
-int nodes_count(graphnode **nodes)
+// function to make the graph
+map<int, vector<int>> make_graph(graphedge *edges, int *info)
 {
-    int count = 0;
-    for (int i = 0; i < MAX_NODES; ++i)
+    map<int, vector<int>> graph;
+    for (int i = 0; i < info[1]; ++i)
     {
-        if (nodes[i] != NULL)
-        {
-            count++;
-        }
-        else
-        {
-            break;
-        }
+        graph[edges[i].src].push_back(edges[i].dest);
+        graph[edges[i].dest].push_back(edges[i].src);
     }
-    return count;
+    info[0] = graph.size();
+    return graph;
 }
 
-// Dijkstra's algorithm
-void dijkstra_algo(int source, graphnode **nodes, int count, int start, int end, int index)
+void update_graph(map<int, vector<int>> &graph, graphedge *edges, int *info, int prev_edges)
 {
-    int i, u, v, dist;
-    int front = -1;
-    int back = -1;
-    int path[MAX_NODES];
-    int visited[MAX_NODES];
-    int distances[MAX_NODES];
-    int prev[MAX_NODES];
-    int pqueue[MAX_NODES];
-
-    for (i = 0; i < MAX_NODES; i++)
+    cout << "Graph updated for edge index " << prev_edges << " to " << info[1] << endl;
+    for (int i = prev_edges; i < info[1]; ++i)
     {
-        visited[i] = 0;
-        distances[i] = INT_MAX;
-        prev[i] = -1;
+        graph[edges[i].src].push_back(edges[i].dest);
+        graph[edges[i].dest].push_back(edges[i].src);
     }
-    distances[source] = 0;
-    pqueue[++back] = source;
+    info[0] = graph.size();
+    return;
+}
 
-    while (front != back)
+void dijkstra_algo(int src, map<int, vector<int>> &graph, int index, int *info, int start, int end)
+{
+    int num_nodes = info[0];
+    int num_edges = info[1];
+
+    vector<int> dist(num_nodes, INT_MAX);
+    vector<int> pred(num_nodes, -1);
+    set<int> visited;
+    dist[src] = 0;
+
+    // priority queue for nodes to visit
+    priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> pq;
+    pq.push({0, src});
+
+    while (!pq.empty())
     {
-        // dequeue the node with minimum distance
-        u = pqueue[++front];
-        visited[u] = 1;
+        // get the node with minimum distance
+        int node = pq.top().second;
+        pq.pop();
 
-        graphnode *p = nodes[u];
-        while (p != NULL)
+        // if we've already visited this node, skip it
+        if (visited.count(node))
         {
-            v = p->val;
-            if (!visited[v])
-            {
-                dist = distances[u] + 1;
-                if (dist < distances[v])
-                {
-                    distances[v] = dist;
-                    prev[v] = u;
-                    pqueue[++back] = v;
-                }
-            }
-            p = p->next;
+            continue;
         }
+
+        // mark node as visited
+        visited.insert(node);
+
+        // relax edges from this node
+        for (int neighbor : graph[node])
+        {
+            int new_dist = dist[node] + 1;
+            if (new_dist < dist[neighbor])
+            {
+                dist[neighbor] = new_dist;
+                pred[neighbor] = node;
+                pq.push({new_dist, neighbor});
+            }
+        }
+    }
+
+    // print out the shortest distances and paths to each node
+    cout << "Shortest paths from node " << src << ":\n";
+    for (int i = 0; i < num_nodes; i++)
+    {
+        cout << "Node " << i << ": ";
     }
 
     ofstream out;
     char filename[20];
     sprintf(filename, "consumer-%d.txt", index);
     out.open(filename, std::ios::app);
-    for (int j = 0; j < count; j++)
+    vector<int> path;
+    for (int j = 0; j < num_nodes; j++)
     {
         int len = 0;
-
         if (j >= start && j <= end)
         {
             continue;
         }
-        int dest = j;
-        while (dest != -1)
+        if (dist[j] != INT_MAX)
         {
-            path[len++] = dest;
-            dest = prev[dest];
-        }
-        for (i = len - 1; i >= 0; i--)
-        {
-            out << path[i];
-            if (i > 0) {
-                out << " -> ";
+            int dest = j;
+            while (dest != -1)
+            {
+                path.push_back(dest);
+                dest = pred[dest];
             }
+            for (int k = path.size() - 1; k >= 0; k--)
+            {
+                out << path[k];
+                if (k > 0)
+                    out << " ";
+            }
+            out << "\n";
         }
-        out << "\n";
-        for (i = 0; i < MAX_NODES; i++)
-            path[i] = 0;
+        path.clear();
     }
     out.close();
+
     return;
 }
 
 int main(int argc, char *argv[])
 {
-    int shmid_1 = atoi(argv[1]);
-    int shmid_2 = atoi(argv[2]);
+    key_t key1 = atoi(argv[1]);
+    key_t key2 = atoi(argv[2]);
     int index = atoi(argv[3]);
 
-    graphnode **nodes = (graphnode **)shmat(shmid_1, NULL, 0);
-    graphnode *edges = (graphnode *)shmat(shmid_2, NULL, 0);
+    printf("Entered consumer - %d\n", index);
 
-    // int index = atoi(argv[1]);
-    // graphnode **nodes = (graphnode **)malloc(sizeof(graphnode *) * MAX_NODES);
-    // graphnode *edges = (graphnode *)malloc(sizeof(graphnode) * MAX_EDGES);
-    // memset(nodes, 0, sizeof(graphnode *) * MAX_NODES);
-    // memset(edges, 0, sizeof(graphnode) * MAX_EDGES);
-    // FILE *fp = fopen("facebook_combined.txt", "r");
-    // if (fp == NULL)
-    // {
-    //     perror("Error in opening file\n");
-    //     exit(EXIT_FAILURE);
-    // }
-    // // string to read the file
-    // char str[100];
-    // // read the file and build the graph
-    // while ((fgets(str, 100, fp)) != NULL)
-    // {
-    //     // read two nodes representing an edge
-    //     int u, v;
-    //     sscanf(str, "%d %d", &u, &v);
-    //     // add the edge to the graph
-    //     // increment the edges pointer by 2 to point to the next edge nodes
-    //     edges = add_edge(nodes, edges, u, v);
-    // }
-    // fclose(fp);
+    int shmid_1 = shmget(key1, sizeof(graphedge) * MAX_NODES, IPC_CREAT | 0666);
+    if (shmid_1 == -1)
+    {
+        perror("error in shmget1 producer");
+        exit(EXIT_FAILURE);
+    }
+    graphedge *edges = (graphedge *)shmat(shmid_1, NULL, 0);
+    if (edges == (graphedge *)-1)
+    {
+        perror("error in shmat");
+        exit(EXIT_FAILURE);
+    }
+
+    int shmid_2 = shmget(key2, 2 * sizeof(int), IPC_CREAT | 0666);
+    if (shmid_2 == -1)
+    {
+        perror("error in shmget2 producer");
+        exit(EXIT_FAILURE);
+    }
+    int *info = (int *)shmat(shmid_2, NULL, 0);
+    if (info == (int *)-1)
+    {
+        perror("error in shmat");
+        exit(EXIT_FAILURE);
+    }
+
+    map<int, vector<int>> graph = make_graph(edges, info);
+    int num_nodes = info[0];
+    int num_edges = 0;
 
     while (true)
     {
-        int count = nodes_count(nodes);
-        int size = 0;
-
-        if (count % NUM_CONSUMERS == 0)
+        if (num_edges != info[1])
         {
-            size = count / NUM_CONSUMERS;
+            update_graph(graph, edges, info, num_edges);
+            num_edges = info[1];
+            num_nodes = info[0];
+
+            int size = 0;
+            if (num_nodes % NUM_CONSUMERS == 0)
+                size = num_nodes / NUM_CONSUMERS;
+            else
+                size = (num_nodes / NUM_CONSUMERS) + 1;
+
+            int start = index * size;
+            int end = start + size - 1;
+
+            if (index == NUM_CONSUMERS - 1)
+                end = num_nodes - 1;
+
+            for (int i = start; i <= end; ++i)
+                dijkstra_algo(i, graph, index, info, start, end);
         }
-        else
-        {
-            size = (count / NUM_CONSUMERS) + 1;
-        }
-
-        int start = index * size;
-        int end = start + size - 1;
-
-        if (index == 9)
-            end = count - 1;
-
-        for (int i = start; i <= end; i++)
-        {
-            dijkstra_algo(i, nodes, count, start, end, index);
-        }
-
         sleep(30);
     }
+
+    cout << "Completed consumer - " << index << endl;
+
+    shmdt(info);
+    shmdt(edges);
 
     return 0;
 }
