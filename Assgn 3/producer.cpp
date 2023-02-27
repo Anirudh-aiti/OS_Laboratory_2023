@@ -85,7 +85,6 @@ bool compare(const pair<int, vector<int>>& a, const pair<int, vector<int>>& b) {
 
 int main(int argc, char *argv[])
 {
-
     srand(time(NULL));
     printf("/********* Key 1: %s, Key 2: %s *******/\n", argv[1], argv[2]);
 
@@ -124,53 +123,54 @@ int main(int argc, char *argv[])
     // make the graph
     update_graph(graph, edges, info);
 
-    while(1){
-
-        // print the graph
-        //print_graph(graph);
-
+    while(1)
+    {
+        
         // print info
         cout << "Producer:: Number of nodes: " << info[0] << endl;
         cout << "Producer:: Number of edges: " << info[1] << endl;
-
-        // get top 20 degreed nodes     
-
-        int top[20] = {-1};
-        vector<pair<int, vector<int>>> sorted_map(graph.begin(), graph.end());
-        sort(sorted_map.begin(), sorted_map.end(), compare);
-
-        int itr=0;
-        for (auto it = sorted_map.begin(); it != sorted_map.end() && distance(sorted_map.begin(), it) < 20; ++it) {
-            top[itr++] = it ->first;
-        }
-
-        // get the cumulative degree array
-        vector<int> cum_dgre;
-        cum_dgre.push_back(graph[0].size());
-        for(int i=1; i < info[0] ; i++){
-            cum_dgre.push_back(graph[i].size()+cum_dgre[i-1]);
-            // cout<<"cumulative dgre of "<<i<<":"<< cum_dgre[i] <<"\n";
-        }
         
-        //prev_edges
-
-        
-        //generate random number m 
+        //generate random number m : number of new nodes to be added
         int m = rand_gen(10,30);
-        // cout<<"m:"<<m<<endl;
+        cout<< "m: "<< m << endl;
 
-        for(int i=0; i < m ; i++ ){
+        for(int i=0; i < m ; i++ )
+        {
             // generate a random number k between 1 and 20 
-            int k = rand_gen(1,20);
-            // cout<<"k:"<<k<<endl;
+            // and index of the new node
+            int k = rand_gen(1,20), new_node = info[0];
+            cout<<"k: "<<k<<endl;
 
-            for(int j = 0; j < k; j++){
-                if(top[j]!=-1){
-                    add_edge(edges,info[0],top[j],info);
-                }
+            // get the cumulative degree array
+            vector <int> cum_dgre;
+            cum_dgre.push_back(graph[0].size());
+
+            for (int i=1; i < info[0] ; i++)
+            {
+                cum_dgre.push_back(graph[i].size() + cum_dgre[i-1]);
             }
-            info[0] = info[0]+1;
+            
+            // map to keep track of the nodes already having an edge with the new node
+            map <int, bool> added;
+            for (int j = 0; j < k; j++)
+            {
+                // next integer in the cumulative degree array
+                int prob_int = rand_gen(1, cum_dgre[info[0]-1] - 1); 
+                int next_int = upper_bound(cum_dgre.begin(), cum_dgre.end(), prob_int) - cum_dgre.begin();
+                
+                // if the node was already added, continue
+                if (added[next_int]) continue;
+                
+                // add the new edge to the graph
+                add_edge(edges, new_node, next_int, info);
+                added[next_int] = true;
 
+                cout << ">> New edge added :: " << new_node << " - " << next_int << endl;
+            }
+            
+            info[0] += 1;
+            // update the graph
+            update_graph(graph, edges, info);
         }
 
         cout << "Producer:: Number of nodes after updation : " << info[0] << endl;
