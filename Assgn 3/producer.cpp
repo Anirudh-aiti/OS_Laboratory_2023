@@ -12,212 +12,161 @@ using namespace std;
 
 typedef struct graphnode
 {
-    int val;
-    struct graphnode *next;
+    int src, dest;
 } graphnode;
 
+#define NUM_CONSUMERS 10
 #define MAX_NODES 10000
-#define MAX_EDGES 1000000
+#define MAX_EDGES 500000
 
-void print_graph(graphnode **nodes, int size)
+// function to print the graph in "output.txt"
+void print_graph(map <int, vector <int>> m)
 {
-    // print to file
-    ofstream myfile("out.txt");
-    streambuf *coutbuf = cout.rdbuf(); // save old buf
-    cout.rdbuf(myfile.rdbuf());        // redirect std::cout to out.txt!
-
-    for (int i = 0; i < size; ++i){
-        if (nodes[i] != NULL)
-        {
-            graphnode *p = nodes[i];
-
-            cout << i << " : ";
-            while (p != NULL)
-            {
-                cout << p->val << " ";
-                p = p->next;
-            }
-            cout << endl;
-        }
-        else
-            break;
+    ofstream out("prod.txt");
+    for (auto i = m.begin(); i != m.end(); ++i)
+    {
+        out << i->first << " : ";
+        for (auto j = i->second.begin(); j != i->second.end(); ++j) out << *j << " ";
+        out << endl;
     }
-    cout.rdbuf(coutbuf);
+    out.close();
 }
 
-// function to add an edge to the nodes 2d array
-graphnode *add_edge(graphnode **nodes, graphnode *edges, int u, int v)
+// function to make the graph
+map <int, vector <int>> make_graph(graphnode * edges, int * info)
+{
+    map <int, vector <int>> graph;
+    for (int i = 0; i < info[1]; ++i)
+    {
+        graph[edges[i].src].push_back(edges[i].dest);
+        graph[edges[i].dest].push_back(edges[i].src);
+    }
+    info[0] = graph.size();
+    return graph;
+}
+
+// function to add an edge to the graph in the shared memory
+void add_edge(graphnode * edges, int u, int v, int *info)
 {
     // add the edge to the graph
-    //cout<<"\nadding edge\n";
-    graphnode a, b;
-    a.val = u;
-    a.next = NULL;
-    b.val = v;
-    b.next = NULL;
-    edges[0] = a;
-    edges[1] = b;
-
-    // add the new nodes to the adjacency lists of u and v
-    if (nodes[v] == NULL)
-    {
-        nodes[v] = edges;
-        nodes[v]->next = NULL;
-    }
-    else
-    {
-        graphnode *p = nodes[v];
-        nodes[v] = edges;
-        nodes[v]->next = p;
-    }
-    if (nodes[u] == NULL)
-    {
-        nodes[u] = edges + 1;
-        nodes[u]->next = NULL;
-    }
-    else
-    {
-        graphnode *p = nodes[u];
-        nodes[u] = edges + 1;
-        nodes[u]->next = p;
-    }
-
-    return edges + 2;
-    cout<<"\nadded edge\n";
+    graphnode a;
+    a.src = u;
+    a.dest = v;
+    edges[info[1]] = a;
+    info[1]++;
 }
 
+// function to generate a random number between min and max 
 int rand_gen(int min, int max)
 {
     return min + (rand() % (max - min + 1));
 }
 
-// function to get the degree of a node
-int degree(graphnode **nodes, int u)
-{
-    int deg = 0;
-    graphnode *p = nodes[u];
-    while (p != NULL)
-    {
-        deg++;
-        p = p->next;
-    }
-    return deg;
+bool compare(const pair<int, vector<int>>& a, const pair<int, vector<int>>& b) {
+    return a.second.size() > b.second.size();
 }
 
-bool compare(const pair<int, int>& a, const pair<int, int>& b) {
-    return a.first > b.first; // sort in descending order based on the first element
-}
 
 int main(int argc, char *argv[])
 {
-    srand(time(NULL));
-    printf("/*********key: %s, key2: %s*******/\n", argv[1], argv[2]);
 
-    key_t key = atoi(argv[1]);
+    srand(time(NULL));
+    printf("/********* Key 1: %s, Key 2: %s *******/\n", argv[1], argv[2]);
+
+    key_t key1 = atoi(argv[1]);
     key_t key2 = atoi(argv[2]);
 
-    int shmid_1 = shmget(key, sizeof(graphnode *) * MAX_NODES, IPC_CREAT | 0666);
+    int shmid_1 = shmget(key1, sizeof(graphnode) * MAX_NODES, IPC_CREAT | 0666);
     if (shmid_1 == -1)
     {
         perror("error in shmget1 producer");
         exit(EXIT_FAILURE);
     }
-
     // attach the shared memory
-    graphnode **nodes = (graphnode **)shmat(shmid_1, NULL, 0);
-    if (nodes == (graphnode **)-1)
+    graphnode * edges = (graphnode *)shmat(shmid_1, NULL, 0);
+    if (edges == (graphnode *)-1)
     {
         perror("error in shmat");
         exit(EXIT_FAILURE);
     }
 
-    int shmid_2 = shmget(key2, sizeof(graphnode) * MAX_EDGES, IPC_CREAT | 0666);
+    int shmid_2 = shmget(key2, 2 * sizeof(int), IPC_CREAT | 0666);
     if (shmid_2 == -1)
     {
         perror("error in shmget2 producer");
         exit(EXIT_FAILURE);
     }
-    graphnode *edges = (graphnode *)shmat(shmid_2, NULL, 0);
-    if (nodes == (graphnode **)-1)
+    int *info = (int*)shmat(shmid_2, NULL, 0);
+    if (info == (int *)-1)
     {
         perror("error in shmat");
         exit(EXIT_FAILURE);
     }
 
-    // testing by printing the file
-    // print_graph(nodes, MAX_NODES);
+    while(1){
+        // make the graph
+        map <int, vector <int>> graph = make_graph(edges, info);
 
-    // generate random number (m)
-    // add that number  of nodes
+        // print the graph
+        //print_graph(graph);
 
-    int m = rand_gen(10, 30);
-    cout << "m:" << m << endl;
+        // print info
+        cout << "Producer:: Number of nodes: " << info[0] << endl;
+        cout << "Producer:: Number of edges: " << info[1] << endl;
 
-    int idx; // first NULL node*
-    for (int i = 0; i < MAX_NODES; i++)
-    {
-        if (nodes[i] == NULL)
-        {
-            idx = i;
-            break;
+        // get top 20 degreed nodes 
+
+        int top[20] = {-1};
+        vector<pair<int, vector<int>>> sorted_map(graph.begin(), graph.end());
+        sort(sorted_map.begin(), sorted_map.end(), compare);
+
+        int itr=0;
+        for (auto it = sorted_map.begin(); it != sorted_map.end() && distance(sorted_map.begin(), it) < 20; ++it) {
+            top[itr++] = it ->first;
         }
-    }
 
-    cout<<"idx:"<<idx<<endl;
-    // get top k degree nodes
+        // get the cumulative degree array
 
-    int dgre [MAX_NODES] = {0};
-    vector <pair <int, int>> v;
-    for (int i = 0; i < idx; i++)
-    {
-        dgre[i] = degree(nodes, i);
-        //cout<< "<"<<dgre[i]<<","<<i<<">"<<"\t";
-        v.push_back(make_pair(dgre[i], i)); // create a pair of original value and index
-    }
-    sort(v.begin(),v.end(),compare);
-
-    std::cout << "Sorted array in descending order: ";
-    for (auto& p : v) {
-        std::cout << p.first << " ";
-    }
-    std::cout << std::endl;
-
-    std::cout << "Indices of sorted array: ";
-    for (auto& p : v) {
-        std::cout << p.second << " ";
-    }
-    std::cout << std::endl;
-
-    cout<< "\nhoi\n";
-    cout<< v[0].first << "," << v[0].second << endl;
-    cout<<"\nhi\n";
-    cout<<edges<<endl;
-
-    
-    m = 1;
-    while(edges != (graphnode*)0) edges += 1;
-
-    cout<<"\nhi2\n"<<endl;
-    cout<<edges<<endl;
-
-    for (int i = 0; i < m; i++)
-    {
-        int k = rand_gen(1, 20);
-        cout << "k: " << k << endl;
-        k =1;
-        // add k edges to the node
-        for(int j = 0; j < k ;j++){
-            cout<<"<"<<idx<<", "<<v[j].second<<">";
-            edges = add_edge(nodes, edges , idx, v[j].second);
+        vector<int> cum_dgre;
+        cum_dgre.push_back(graph[0].size());
+        for(int i=1; i < info[0] ; i++){
+            cum_dgre.push_back(graph[i].size()+cum_dgre[i-1]);
+            cout<<"dgre of "<<i<<":"<< cum_dgre[i] <<"\n";
         }
-        cout<<endl;
-        idx++;
+        
+
+        //generate random number m 
+        int m = rand_gen(10,30);
+        cout<<"m:"<<m<<endl;
+        for(int i=0; i < m ; i++ ){
+
+            // generate random number k 
+            int k = rand_gen(1,20);
+            cout<<"k:"<<k<<endl;
+
+
+
+            for(int j = 0; j < k; j++){
+                if(top[j]!=-1){
+                    add_edge(edges,info[0],top[j],info);
+                }
+            }
+            info[0] = info[0]+1;
+
+        }
+
+        cout << "Producer:: Number of nodes after updation : " << info[0] << endl;
+
+        // make the graph
+        map <int, vector <int>> graph2 = make_graph(edges, info);
+
+
+        // print the graph
+        print_graph(graph2);
+        sleep(50);
     }
 
-    print_graph(nodes,MAX_NODES);
-    
-
-    shmdt(nodes);
+    shmdt(info);
     shmdt(edges);
     return 0;
 }
