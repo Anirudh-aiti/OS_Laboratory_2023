@@ -8,12 +8,11 @@
 #include <unistd.h>
 #include <fstream>
 
-using namespace std;
-
-typedef struct graphnode
+using namespace std; 
+typedef struct graphedge
 {
     int src, dest;
-} graphnode;
+} graphedge;
 
 #define NUM_CONSUMERS 10
 #define MAX_NODES 10000
@@ -33,7 +32,7 @@ void print_graph(map <int, vector <int>> m)
 }
 
 // function to make the graph
-map <int, vector <int>> make_graph(graphnode * edges, int * info)
+map <int, vector <int>> make_graph(graphedge * edges, int * info)
 {
     map <int, vector <int>> graph;
     for (int i = 0; i < info[1]; ++i)
@@ -46,10 +45,10 @@ map <int, vector <int>> make_graph(graphnode * edges, int * info)
 }
 
 // function to add an edge to the graph in the shared memory
-void add_edge(graphnode * edges, int u, int v, int *info)
+void add_edge(graphedge * edges, int u, int v, int *info)
 {
     // add the edge to the graph
-    graphnode a;
+    graphedge a;
     a.src = u;
     a.dest = v;
     edges[info[1]] = a;
@@ -76,15 +75,15 @@ int main(int argc, char *argv[])
     key_t key1 = atoi(argv[1]);
     key_t key2 = atoi(argv[2]);
 
-    int shmid_1 = shmget(key1, sizeof(graphnode) * MAX_NODES, IPC_CREAT | 0666);
+    int shmid_1 = shmget(key1, sizeof(graphedge) * MAX_NODES, IPC_CREAT | 0666);
     if (shmid_1 == -1)
     {
         perror("error in shmget1 producer");
         exit(EXIT_FAILURE);
     }
     // attach the shared memory
-    graphnode * edges = (graphnode *)shmat(shmid_1, NULL, 0);
-    if (edges == (graphnode *)-1)
+    graphedge * edges = (graphedge *)shmat(shmid_1, NULL, 0);
+    if (edges == (graphedge *)-1)
     {
         perror("error in shmat");
         exit(EXIT_FAILURE);
