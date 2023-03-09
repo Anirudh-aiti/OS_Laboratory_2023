@@ -10,8 +10,8 @@ using namespace std;
 using namespace std::chrono;
 
 //----- MACROS -----//
-#define NUM_PUSH_UPDATE 1
-#define NUM_READ_POST 1
+#define NUM_PUSH_UPDATE 25
+#define NUM_READ_POST 10
 #define BUFF_SIZE 300
 #define NUM_NODES 40000
 
@@ -63,7 +63,6 @@ void fileWrite(string file, string str, string mode)
         char * buff = new char[str.length() + 1];
         strcpy(buff, str.c_str());
         fwrite(buff, sizeof(char), str.length(), stdout);
-        free(buff);
     }
     else {
         FILE * fp = fopen(file.c_str(), mode.c_str());
@@ -71,7 +70,6 @@ void fileWrite(string file, string str, string mode)
         strcpy(buff, str.c_str());
         fwrite(buff, sizeof(char), str.length(), fp);
         fclose(fp);
-        free(buff);
     }
 }
 
@@ -113,14 +111,13 @@ void print_nodes(string filename)
 // mutex for actionQueue
 pthread_mutex_t actionQueue_mutex;
 pthread_cond_t actionQueue_cond;
-bool AQ_isEmpty = true;
+int AQ_size = 0;
 
 pthread_mutex_t feedQueue_mutex[NUM_NODES];
-pthread_cond_t feedQueue_cond[NUM_NODES];
 
 pthread_mutex_t userQueue_mutex;
 pthread_cond_t userQueue_cond;
-bool UQ_isEmpty = true;
+int UQ_size = 0;
 
 void lock(pthread_mutex_t * lock)
 {
@@ -169,7 +166,6 @@ void * userSimulator(void * vars)
             sprintf(buff, "\tuserSimulator :: chosen <%d> {degree: %ld , actions: %d}\n", *it, graph[*it].size(), n);
             // fileWrite("stdout", buff, "a");
             fileWrite("sns.log", buff, "a");
-            free(buff);
 
             for (int i = 0; i < n; i++)
             {
@@ -183,7 +179,6 @@ void * userSimulator(void * vars)
                 sprintf(buff, "\t\tuserSimulator :: <%d> : %d (%s)\n", *it, action_type, actionName[action_type].c_str());
                 // fileWrite("stdout", buff, "a");
                 fileWrite("sns.log", buff, "a");
-                free(buff);
                 
                 // push action to wallQueue
                 user[*it]->wallQueue.push(action{.user_id = *it, .action_id = i, .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : time(NULL), .timestamp = time(NULL)});
@@ -195,7 +190,7 @@ void * userSimulator(void * vars)
                 actionQueue.push(action{.user_id = *it, .action_id = i, .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : time(NULL), .timestamp = time(NULL)});
 
                 pthread_cond_signal(&actionQueue_cond);
-                AQ_isEmpty = false;
+                AQ_size++;
                 
                 unlock(&actionQueue_mutex);
                 //--- END CRITICAL SECTION
@@ -217,18 +212,17 @@ void * pushUpdate(void * vars)
     sprintf(buff, ">> pushUpdate Thread awoke\n" );
     fileWrite("stdout", buff, "a");
     fileWrite("sns.log", buff, "a");
-    free(buff);
 
     while (1)
     {
         //--- START CRITICAL SECTION
         lock(&actionQueue_mutex);
 
-        while (AQ_isEmpty) pthread_cond_wait(&actionQueue_cond, &actionQueue_mutex);
+        while (AQ_size == 0) pthread_cond_wait(&actionQueue_cond, &actionQueue_mutex);
 
-        static action a = actionQueue.front();
+        action a = actionQueue.front();
         actionQueue.pop();
-        if (actionQueue.empty()) AQ_isEmpty = true;
+        AQ_size--;
         
         unlock(&actionQueue_mutex);
         //--- END CRITICAL SECTION
@@ -238,8 +232,6 @@ void * pushUpdate(void * vars)
         // fileWrite("stdout", buff, "a");
         fileWrite("sns.log", buff, "a");
 
-        set <int> userSet; // set of users to be notified
-
         // push action to neighbors
         for (auto it = graph[a.user_id].begin(); it != graph[a.user_id].end(); it++)
         {
@@ -247,14 +239,12 @@ void * pushUpdate(void * vars)
             lock(&feedQueue_mutex[*it]);
 
             user[*it]->feedQueue.push(a);
-            pthread_cond_signal(&feedQueue_cond[*it]);
 
             // print action
             char * buff = new char[BUFF_SIZE];
             sprintf(buff, "\t\tpushUpdate :: pushed action <%d> <- {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", (int)*it, a.user_id, a.action_id, a.action_type, a.timestamp);
             // fileWrite("stdout", buff, "a");
             fileWrite("sns.log", buff, "a");
-            free(buff);
 
             unlock(&feedQueue_mutex[*it]);
             //--- END CRITICAL SECTION
@@ -263,13 +253,9 @@ void * pushUpdate(void * vars)
             //--- START CRITICAL SECTION
             lock(&userQueue_mutex);
 
-            if (userSet.find(*it) == userSet.end())
-            {
-                userQueue.push(*it);
-                userSet.insert(*it);
-            }
+            userQueue.push(*it);
             
-            UQ_isEmpty = false;
+            UQ_size++;
             pthread_cond_signal(&userQueue_cond);
 
             unlock(&userQueue_mutex);
@@ -290,18 +276,17 @@ void * readPost(void * vars)
     sprintf(buff, ">> readPost Thread awoke\n" );
     fileWrite("stdout", buff, "a");
     fileWrite("sns.log", buff, "a");
-    free(buff);
     
     while (1)
     {
         //---- START CRITICAL SECTION
         lock(&userQueue_mutex);
 
-        while (UQ_isEmpty) pthread_cond_wait(&userQueue_cond, &userQueue_mutex);
+        while (UQ_size == 0) pthread_cond_wait(&userQueue_cond, &userQueue_mutex);
 
         int user_id = userQueue.front();
         userQueue.pop();
-        if (userQueue.empty()) UQ_isEmpty = true;
+        UQ_size--;
 
         unlock(&userQueue_mutex);
         //---- END CRITICAL SECTION
@@ -309,16 +294,17 @@ void * readPost(void * vars)
         //--- START CRITICAL SECTION
         lock(&feedQueue_mutex[user_id]);
 
-        while (user[user_id]->feedQueue.empty()) pthread_cond_wait(&feedQueue_cond[user_id], &feedQueue_mutex[user_id]);
+        // empty the feedQueue
+        while (!user[user_id]->feedQueue.empty())
+        {
+            action a = user[user_id]->feedQueue.top();
+            user[user_id]->feedQueue.pop();
 
-        action a = user[user_id]->feedQueue.top();
-        user[user_id]->feedQueue.pop();
-
-        char * buff = new char[BUFF_SIZE];
-        sprintf(buff, "\treadPost :: popped feed <%d> -> {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", user_id, a.user_id, a.action_id, a.action_type, a.timestamp);
-        // fileWrite("stdout", buff, "a");
-        fileWrite("sns.log", buff, "a");
-        free(buff);
+            char * buff = new char[BUFF_SIZE];
+            sprintf(buff, "\treadPost :: popped feed <%d> -> {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", user_id, a.user_id, a.action_id, a.action_type, a.timestamp);
+            // fileWrite("stdout", buff, "a");
+            fileWrite("sns.log", buff, "a");
+        }
 
         unlock(&feedQueue_mutex[user_id]);
         //--- END CRITICAL SECTION
@@ -335,11 +321,7 @@ signed main()
     // mutex and cond inits
     pthread_mutex_init(&actionQueue_mutex, NULL);
     pthread_cond_init(&actionQueue_cond, NULL);
-    for (int i = 0; i < NUM_NODES; ++i) 
-    {
-        pthread_mutex_init(&feedQueue_mutex[i], NULL);
-        pthread_cond_init(&feedQueue_cond[i], NULL);
-    }
+    for (int i = 0; i < NUM_NODES; i++) pthread_mutex_init(&feedQueue_mutex[i], NULL);
     pthread_mutex_init(&userQueue_mutex, NULL);
     pthread_cond_init(&userQueue_cond, NULL);
 
@@ -389,11 +371,7 @@ signed main()
     // mutex and cond destroy
     pthread_mutex_destroy(&actionQueue_mutex);
     pthread_cond_destroy(&actionQueue_cond);
-    for (int i = 0; i < 40000; ++i) 
-    {
-        pthread_mutex_destroy(&feedQueue_mutex[i]);
-        pthread_cond_destroy(&feedQueue_cond[i]);
-    }
+    for (int i = 0; i < NUM_NODES; i++) pthread_mutex_destroy(&feedQueue_mutex[i]);
     pthread_mutex_destroy(&userQueue_mutex);
     pthread_cond_destroy(&userQueue_cond);
 
