@@ -52,9 +52,12 @@ Data Structures:-
             - numActions[0] - post count
             - numActions[1] - like count
             - numActions[2] - comment count
+
+
 - map <int, vector<int>> graph
     - we store the entire graph in this data structure
     - it is a map of type <node_id, all_nodes_neighbouring_to_node_id (adjacency_list)> 
+    * using this type of data structure for graph makes it easy for a user_id to obtain list of neighbours and no.of neighbours
 
 
 - map <int, node*> user
@@ -69,27 +72,4 @@ Data Structures:-
 
 - queue <int> userQueue
     - queue of users whose feed queue get upadated (shared between pushUpdate and readPost)
-    - note that this contains no duplicates as its implemented in parallel with a userSet
     
-- set <int> userSet; 
-    - set of users whose feed queue get upadated just to avoid duplicates while insertions
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
