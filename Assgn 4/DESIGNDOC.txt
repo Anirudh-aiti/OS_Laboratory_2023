@@ -105,18 +105,21 @@ Queue size rationalization:-
     
 Lock usage:-
 
-- we are using 1(actionQueue) + 1(userQueue) + 37,700(one for each feedQueue in every user) = 37,702 locks
+- we are using 1(actionQueue) + 1(userQueue) + 37,700(one for each feedQueue in every user) = 37,702 locks (n + 2 locks)
 
 - actionQueue lock
     - it is used for prevention of race condition between userSimulator thread and pushUpdate threads
-    - it also prevents race condition among the pushUpdate threads
-    
-- userQueue lock
-    - this is locked to prevent race conditions between pushUpdate threads and readPost threads
-    
+    - it also prevents race condition among the pushUpdate threads 
+
 - feedQueue locks 
-    - each user has a lock for their feedQueue to prevent race conditions between pushUpdate threads and readPost threads
+    - There are n feedQueue locks, each dedicated to a node's feedQueue.
+    - each user has a lock for their feedQueue to prevent race conditions between pushUpdate threads and readPost threads.
+    - pushUpdate/readPost threads use them whenever they need to access/update a user's feedQueue.
+
+- userQueue lock
+    - this is locked to prevent race conditions between pushUpdate threads and readPost threads.
  
 
-* Parallelism is present here, the 25 pushUpdate threads can parallely work on different feedQueues and the same applies for the 10 readPost threads.
-    
+* Parallelism / Concurrency: the locks used enable parellelism as multiple threads can work simultaneously without having race conditions with each other. This can be seen in the manner the sns.log file is printed.
+    - The userSimulator thread locks the actionQueue when it needs to push new actions; this queue is also used on a shared basis with the 25 pushUpdate threads, which would not be able to access it till the userSimulator gives up the lock and vice versa. userSimulator locks the actionQueue lock once per action of a chosen node and unlocks it after signaling available pushUpdate threads. But, once given access to the queue, the userSimulator can lock the queue again once it is scheduled by the scheduler, while the pushUpdate threads push the actions to neighbour feedQueues (parellel pushing). Therefore, both the userSimulator thread and pushUpdate threads can be active simultanously.
+    - Similarly, the 25 pushUpdate threads can parallely work on different feedQueues simultanously as each feedQueue has its own lock. The same applies for the 10 readPost threads. Moreover, just like the shared relationship of actionQueue between pushUpdate and userSimulator threads, there is a shared relationship of userQueue between pushUpdate and readPost threads. Therefore, many readPost threads can, after popping a user from the userQueue, output feeds simultaneously.
