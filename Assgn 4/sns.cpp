@@ -21,8 +21,8 @@ typedef struct action
     int user_id = 0; // user who performed the action
     int action_id = 0; // id of the post, like or comment
     int action_type = 0; // 0 for post, 1 for like, 2 for comment
-    long priority_val = 0; // priority value of the action
-    time_t timestamp; // time of the action
+    uint64_t priority_val = 0; // priority value of the action
+    uint64_t timestamp; // time of the action (in milliseconds)
 }action;
 
 // custom comparators for feedQueue
@@ -81,6 +81,11 @@ void fileWrite(string file, string str, string mode)
         fwrite(buff, sizeof(char), str.length(), fp);
         fclose(fp);
     }
+}
+
+uint64_t timeSinceEpochMillisec() {
+  using namespace std::chrono;
+  return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
 //----- Global Variables -----//
@@ -193,13 +198,14 @@ void * userSimulator(void * vars)
                 delete buff;
                 
                 // push action to wallQueue
-                users[it].wallQueue.push(action{.user_id = it, .action_id = users[it].numActions[action_type], .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : time(NULL), .timestamp = time(NULL)});
+                uint64_t curr_time = timeSinceEpochMillisec();
+                users[it].wallQueue.push(action{.user_id = it, .action_id = users[it].numActions[action_type], .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : curr_time, .timestamp = curr_time});
 
                 // push action to actionQueue
                 //--- START CRITICAL SECTION
                 lock(&actionQueue_mutex);
 
-                actionQueue.push(action{.user_id = it, .action_id = users[it].numActions[action_type], .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : time(NULL), .timestamp = time(NULL)});
+                actionQueue.push(action{.user_id = it, .action_id = users[it].numActions[action_type], .action_type = action_type, .priority_val = (user_priority == 0)? user_degree : curr_time, .timestamp = curr_time});
 
                 pthread_cond_signal(&actionQueue_cond);
                 AQ_size++;
