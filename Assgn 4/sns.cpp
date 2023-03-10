@@ -174,7 +174,7 @@ void * userSimulator(void * vars)
             int n = log2(graph[it].size() * 2.0) * 3.0;
             char * buff = new char[BUFF_SIZE];
             sprintf(buff, "\tuserSimulator :: chosen <%d> {degree: %ld , actions: %d}\n", it, graph[it].size(), n);
-            // fileWrite("stdout", buff, "a");
+            fileWrite("stdout", buff, "a");
             fileWrite("sns.log", buff, "a");
             delete buff;
 
@@ -188,7 +188,7 @@ void * userSimulator(void * vars)
                 // print action
                 char * buff = new char[BUFF_SIZE];
                 sprintf(buff, "\t\tuserSimulator :: <%d> : %d (%s)\n", it, action_type, actionName[action_type].c_str());
-                // fileWrite("stdout", buff, "a");
+                fileWrite("stdout", buff, "a");
                 fileWrite("sns.log", buff, "a");
                 delete buff;
                 
@@ -231,15 +231,17 @@ void * pushUpdate(void * vars)
         //--- START CRITICAL SECTION
         lock(&actionQueue_mutex);
 
+        // wait for actionQueue to have an action in it
         while (AQ_size == 0) pthread_cond_wait(&actionQueue_cond, &actionQueue_mutex);
 
+        // pop action from actionQueue
         action a = actionQueue.front();
         actionQueue.pop();
         AQ_size--;
 
         char * buff = new char[BUFF_SIZE];
         sprintf(buff, "\tpushUpdate :: popped action -> {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", a.user_id, a.action_id, a.action_type, a.timestamp);
-        // fileWrite("stdout", buff, "a");
+        fileWrite("stdout", buff, "a");
         fileWrite("sns.log", buff, "a");
         delete buff;
         
@@ -252,25 +254,39 @@ void * pushUpdate(void * vars)
             //--- START CRITICAL SECTION
             lock(&feedQueue_mutex[it]);
 
+            // if user's order is 0, change priority_val to number of common friends
+            // so the actions of closest friends are prioritized
+            if (users[it].order == 0)
+            {
+                int common = 0;
+                for (auto it2 : graph[it])
+                {
+                    auto iter = find(graph[a.user_id].begin(), graph[a.user_id].end(), it2);
+                    if (iter != graph[a.user_id].end()) common++;
+                }
+                a.priority_val = common;
+            }
+
             users[it].feedQueue.push(a);
 
             // print action
             char * buff = new char[BUFF_SIZE];
             sprintf(buff, "\t\tpushUpdate :: pushed action <%d> <- {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", it, a.user_id, a.action_id, a.action_type, a.timestamp);
-            // fileWrite("stdout", buff, "a");
+            fileWrite("stdout", buff, "a");
             fileWrite("sns.log", buff, "a");
             delete buff;
-
 
             unlock(&feedQueue_mutex[it]);
             //--- END CRITICAL SECTION
 
-
             //--- START CRITICAL SECTION
             lock(&userQueue_mutex);
 
+            // push user to userQueue
             userQueue.push(it);
             UQ_size++;
+
+            // signal readPost thread
             pthread_cond_signal(&userQueue_cond);
 
             unlock(&userQueue_mutex);
@@ -298,6 +314,7 @@ void * readPost(void * vars)
         //---- START CRITICAL SECTION
         lock(&userQueue_mutex);
 
+        // wait for userQueue to have a user in it
         while (UQ_size == 0) pthread_cond_wait(&userQueue_cond, &userQueue_mutex);
 
         int user_id = userQueue.front();
@@ -310,12 +327,6 @@ void * readPost(void * vars)
         //--- START CRITICAL SECTION
         lock(&feedQueue_mutex[user_id]);
 
-        char * buff = new char[BUFF_SIZE];
-        sprintf(buff, "\treadPost :: reading feed <%d> -> {size: %ld}\n", user_id, users[user_id].feedQueue.size());
-        // fileWrite("stdout", buff, "a");
-        fileWrite("sns.log", buff, "a");
-        delete buff;
-
         // empty the feedQueue
         while (!users[user_id].feedQueue.empty())
         {
@@ -323,8 +334,8 @@ void * readPost(void * vars)
             users[user_id].feedQueue.pop();
 
             char * buff = new char[BUFF_SIZE];
-            sprintf(buff, "\treadPost :: popped feed <%d> -> {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld}\n", user_id, a.user_id, a.action_id, a.action_type, a.timestamp);
-            // fileWrite("stdout", buff, "a");
+            sprintf(buff, "\treadPost :: popped feed <%d> -> {UserID: %d , ActionID: %d, Action: %d , Timestamp: %ld, Priority: %ld}\n", user_id, a.user_id, a.action_id, a.action_type, a.timestamp, a.priority_val);
+            fileWrite("stdout", buff, "a");
             fileWrite("sns.log", buff, "a");
             delete buff;
         }
@@ -354,9 +365,12 @@ signed main()
     fileWrite("sns.log", ">> Main Thread awoke\n", "w");  
     fileWrite("stdout", ">> Main Thread awoke\n", "w");
 
-    // fill users vector (user_id = index) 
-    // [Update IDs]
-    for (int i = 0; i < NUM_NODES; ++i) users[i].user_id = i;
+    // fill users vector (user_id = index, order = 0 or 1) 
+    // [Update IDs and orders]
+    for (int i = 0; i < NUM_NODES; ++i) {
+        users[i].order = rand() % 2;
+        users[i].user_id = i;
+    }
 
     // load graph
     ifstream file("musae_git_edges.csv");
@@ -375,9 +389,9 @@ signed main()
         graph[y].push_back(x);
     }
 
-    // optional print graph and nodes
-    // print_graph("graph.txt");
-    // print_nodes("nodes.txt");
+    // optional print graph and node orders
+    print_graph("graph.txt");
+    print_nodes("nodes.txt");
 
     // create threads
     pthread_t userSimulator_t, pushUpdate_t[NUM_PUSH_UPDATE], readPost_t[NUM_READ_POST];
