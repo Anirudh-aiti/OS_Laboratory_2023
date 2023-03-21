@@ -8,6 +8,7 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <time.h>
+#include <queue>
 
 using namespace std;
 
@@ -15,8 +16,8 @@ using namespace std;
 
 // semaphores
 sem_t roomsAlloc; // semaphore for the number of rooms to be allocated
-// sem_t * cleanerAlloc; // semaphore to allocate cleaners
-sem_t * guestSleep;
+sem_t cleanerAlloc; // semaphore to allocate cleaners
+sem_t * guestSleep; 
 
 // thread_t
 pthread_t * cleaner_t;
@@ -26,11 +27,13 @@ pthread_t * guest_t;
 vector <pthread_mutex_t> roomLocks;
 pthread_mutex_t roomQueueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t roomQueueCond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t cleanQueueLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cleanQueueCond = PTHREAD_COND_INITIALIZER;
 
 // queues , arrays and other globals
 long long X, Y, N;
 multiset <pair<int, int>> roomQueue; // multiset of <room_no, priority>
-multiset <pair<int, int>> cleanQueue; // multiset of <room_no, priority>
+queue <pair<int,bool>> cleanQueue; // queue of <room_no>
 vector <time_t> timeStayed;
 vector <int> stayedInPast;
 
@@ -71,6 +74,16 @@ void * guest_thread ( void * params )
         roomInfo = *roomQueue.begin();
         roomQueue.erase(roomQueue.begin());
         cout << "Guest " << ID << " : got room <" << roomInfo.first << ", "  << roomInfo.second << "> " << endl;
+
+        // if this guest is the last guest i.e. the 2 * Nth guest
+        // then post on the cleanerAlloc semaphore
+        if (roomQueue.size() == 0)
+        {
+            pthread_mutex_unlock(&roomQueueLock);
+            cout << "Guest " << ID << " : last guest with room " << roomInfo.second << endl;
+            for (int i = 0; i < N; ++i) sem_post(&cleanerAlloc);
+            continue;
+        }
 
         // if noone has stayed in the same room in the past,
         // push it back to the set with your priority
@@ -137,7 +150,7 @@ void * guest_thread ( void * params )
                 cout << "Guest " << ID << " : leaving room " << roomInfo.second << " after " << rand_time << " seconds" << endl;
                 roomQueue.erase({myPriority, roomInfo.second});
                 roomQueue.insert({0, roomInfo.second});
-                cout<<"Guest " << ID << " : I inserted room " << roomInfo.second <<endl;
+                // cout<<"Guest " << ID << " : I inserted room " << roomInfo.second <<endl;
             }
 
             // signal that the room is free
@@ -158,8 +171,66 @@ void * guest_thread ( void * params )
 
 void * cleaner_thread ( void * params )
 {
+    // generate a random ID string for the cleaner
+    string ID = "";
+    for (int i = 0; i < 4; ++i) ID += (char)(rand() % 26 + 65);
+
     while (1)
     {
+        // wait for the cleanerAlloc semaphore to be posted
+        sem_wait(&cleanerAlloc);
+        
+        cout << "Cleaner " << ID << " : started" << endl;
+
+        // lock the cleanQueueLock
+        pthread_mutex_lock(&cleanQueueLock);
+
+        // pop a room from the cleanQueue
+        int room = cleanQueue.front().first;
+        bool clean = cleanQueue.front().second;
+
+        cout << "Cleaner " << ID << " : cleaning room " << room << endl;
+        cleanQueue.pop();
+
+
+        // unlock the cleanQueueLock
+        pthread_mutex_unlock(&cleanQueueLock);
+
+        // clean the room : wait for (lambda = 1.250) * timeStayed[room] seconds
+        int clean_time = 1.250 * (float)timeStayed[room];
+        sleep(clean_time);
+        cout << "Cleaner " << ID << " : cleaned room " << room <<",time taken  "<< clean_time<< endl;
+
+        // lock the clean Queue
+        pthread_mutex_lock(&cleanQueueLock);
+
+        // push the room back to the cleanQueue
+        clean =1;
+        cleanQueue.push(make_pair(room,clean));
+
+
+        // check if it is the last cleaning thread
+        if(cleanQueue.size() == N && cleanQueue.front().second)
+        {
+
+            pthread_mutex_lock(&roomQueueLock);
+
+            cout<< "I am the last cleaner!!\n";
+
+            timeStayed = vector <time_t> (N, 0);
+            stayedInPast = vector <int> (N, 0);
+
+            // push rooms into roomQueue
+            for (int i = 0; i < N; ++i) roomQueue.insert({0, i});
+
+            pthread_mutex_unlock(&roomQueueLock);
+
+        }
+                
+        // unlock the cleanQueueLock
+        pthread_mutex_unlock(&cleanQueueLock);
+
+
 
     }
 
@@ -182,21 +253,23 @@ signed main()
     // init
     srand(time(NULL));
     setvbuf(stdout, NULL, _IONBF, 0);
+
+    // vector and queue inits
     roomLocks = vector <pthread_mutex_t> (N, PTHREAD_MUTEX_INITIALIZER);
     timeStayed = vector <time_t> (N, 0);
     stayedInPast = vector <int> (N, 0);
     guestSleep = new sem_t [N];
     for (int i = 0; i < N; ++i) roomQueue.insert({0, i});
+    for (int i = 0; i < N; ++i) cleanQueue.push({i,0});
 
     // semaphore inits
     for (int i = 0; i < N; ++i) sem_init(&guestSleep[i], 0, 0);
     sem_init(&roomsAlloc, 0, 2 * N);
+    sem_init(&cleanerAlloc, 0, 0);
 
-    // mutex and cond inits
+    // other mutex and cond inits
     for (int i = 0; i < N; ++i) pthread_mutex_init(&roomLocks[i], NULL);
-    pthread_mutex_init(&roomQueueLock, NULL);
-    pthread_cond_init(&roomQueueCond, NULL);
-
+    
     // Creating threads for cleaner and guests
     cleaner_t = new pthread_t[X];
     guest_t = new pthread_t[Y];
