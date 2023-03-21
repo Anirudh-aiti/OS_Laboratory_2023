@@ -15,6 +15,7 @@ using namespace std;
 
 // semaphores
 sem_t roomsAlloc; // semaphore for the number of rooms to be allocated
+// sem_t * cleanerAlloc; // semaphore to allocate cleaners
 sem_t * guestSleep;
 
 // thread_t
@@ -29,6 +30,7 @@ pthread_cond_t roomQueueCond = PTHREAD_COND_INITIALIZER;
 // queues , arrays and other globals
 long long X, Y, N;
 multiset <pair<int, int>> roomQueue; // multiset of <room_no, priority>
+multiset <pair<int, int>> cleanQueue; // multiset of <room_no, priority>
 vector <time_t> timeStayed;
 vector <int> stayedInPast;
 
@@ -41,6 +43,7 @@ void * guest_thread ( void * params )
     // generate a random ID string for the guest
     string ID = "";
     for (int i = 0; i < 4; ++i) ID += (char)(rand() % 26 + 65);
+    cout << "Guest " << ID << " : my priority is " << myPriority << "\n";
 
     while (1)
     {
@@ -71,7 +74,7 @@ void * guest_thread ( void * params )
 
         // if noone has stayed in the same room in the past,
         // push it back to the set with your priority
-        if (stayedInPast[roomInfo.second] == 0) 
+        if (stayedInPast[roomInfo.second] == 0 ) 
         {
             cout << "Guest " << ID << " : staying in the room " << roomInfo.second << " first! Priority : " << roomInfo.first << endl;
             roomQueue.insert({myPriority, roomInfo.second});
@@ -89,10 +92,17 @@ void * guest_thread ( void * params )
             cout << "Guest " << ID << " : signaling the guest in room " << roomInfo.second << " to leave! Priority : " << roomInfo.first << endl;
             sem_post(&guestSleep[roomInfo.second]);
             stayedInPast[roomInfo.second]++;
-        }    
+        }
+
+        // if someone has already stayed in the room and has vacated it
+        else if(( stayedInPast[roomInfo.second]==1 && roomInfo.first==0 ))
+        {
+            stayedInPast[roomInfo.second]++;
+            cout << "Guest " << ID << " : staying in the room " << roomInfo.second << " second! Priority : " << roomInfo.first << endl;
+        } 
 
         // two people have stayed, go back to wait
-        else 
+        else
         {
             cout << "Guest " << ID << " : two guests have stayed in the room " << roomInfo.second << " already! Priority : " << roomInfo.first << endl;
             pthread_mutex_unlock(&roomQueueLock);
@@ -122,11 +132,12 @@ void * guest_thread ( void * params )
             // update the roomQueue entry with an empty room and priority 0
             pthread_mutex_lock(&roomQueueLock);
             
-            if (roomQueue.find({myPriority, roomInfo.second}) != roomQueue.end())
+            if (roomQueue.find({myPriority, roomInfo.second}) != roomQueue.end() && stayedInPast[roomInfo.second] == 1)
             {
                 cout << "Guest " << ID << " : leaving room " << roomInfo.second << " after " << rand_time << " seconds" << endl;
-                roomQueue.erase(roomInfo);
+                roomQueue.erase({myPriority, roomInfo.second});
                 roomQueue.insert({0, roomInfo.second});
+                cout<<"Guest " << ID << " : I inserted room " << roomInfo.second <<endl;
             }
 
             // signal that the room is free
