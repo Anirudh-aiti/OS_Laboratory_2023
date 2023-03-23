@@ -9,7 +9,8 @@
 #include <fcntl.h>
 #include <time.h>
 #include <queue>
-
+#include <string.h>
+#define BUFF_SIZE 300
 using namespace std;
 
 // --- Global Variables ---
@@ -36,23 +37,65 @@ multiset <pair<int, int>> roomQueue; // multiset of <room_no, priority>
 queue <pair<int,bool>> cleanQueue; // queue of <room_no>
 vector <time_t> timeStayed;
 vector <int> stayedInPast;
+vector<bool> available;
+vector<int> guest_staying;
+
+// Print a string to a file using fwrite in given mode
+// (to print to stdout, use "stdout" as the file name)
+void fileWrite(string file, string str, string mode)
+{
+    if (file == "stdout") {
+        char * buff = new char[str.length() + 1];
+        strcpy(buff, str.c_str());
+        fwrite(buff, sizeof(char), str.length(), stdout);
+    }
+    else {
+        FILE * fp = fopen(file.c_str(), mode.c_str());
+        char * buff = new char[str.length() + 1];
+        strcpy(buff, str.c_str());
+        fwrite(buff, sizeof(char), str.length(), fp);
+        fclose(fp);
+    }
+}
 
 // --- Threads ---
 void * guest_thread ( void * params )
 {
+    // params get the char* ID
+
+    int guestID ;
+    pthread_t g = *(pthread_t*) params;
+
+    char *buff = new char[BUFF_SIZE];
+    // sprintf(buff, "Guest threadid %ld : I am a guest thread\n",g);
+    // fileWrite("hotel.log", buff, "a");
+
+    for(int i=0; i<Y; i++){
+        if(guest_t[i]==g){
+            guestID = i;
+            break;
+        }
+    }
+
+
     // initialize myPriority to a random number between 1 and Y
     int myPriority = rand() % Y + 1;
 
     // generate a random ID string for the guest
-    string ID = "";
-    for (int i = 0; i < 4; ++i) ID += (char)(rand() % 26 + 65);
-    cout << "Guest " << ID << " : my priority is " << myPriority << "\n";
+    string ID = to_string(guestID);
+    //for (int i = 0; i < 4; ++i) ID += (char)(rand() % 26 + 65);
+    // cout << "Guest " << ID << " : my priority is " << myPriority << "\n";
+    memset(buff, 0, BUFF_SIZE);
+    sprintf(buff, "Guest %d : my priority is %d\n",guestID,myPriority);
+    fileWrite("hotel.log", buff, "a");
 
     while (1)
     {
         // sleep for a random time between 10 and 20 seconds
         int T = rand() % 11 + 10;
-        cout << "Guest " << ID << " : sleeping for time " << T << "\n";
+        memset(buff, 0, BUFF_SIZE);
+        sprintf(buff, "Guest %d : sleeping for time %d\n",guestID,T);
+        fileWrite("hotel.log", buff, "a");
         sleep(T);
 
         // lock the mutex for roomQueue
@@ -73,14 +116,45 @@ void * guest_thread ( void * params )
         pair <int, int> roomInfo;
         roomInfo = *roomQueue.begin();
         roomQueue.erase(roomQueue.begin());
-        cout << "Guest " << ID << " : got room <" << roomInfo.first << ", "  << roomInfo.second << "> " << endl;
+
+        memset(buff, 0, BUFF_SIZE);
+        sprintf(buff, "Guest %d : got room <priority,room> <%d, %d>\n",guestID,roomInfo.first,roomInfo.second);
+        fileWrite("hotel.log", buff, "a");
+
 
         // if this guest is the last guest i.e. the 2 * Nth guest
         // then post on the cleanerAlloc semaphore
         if (roomQueue.size() == 0)
         {
             pthread_mutex_unlock(&roomQueueLock);
-            cout << "Guest " << ID << " : last guest with room " << roomInfo.second << endl;
+
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : last guest with room %d\n",guestID,roomInfo.second);
+            fileWrite("hotel.log", buff, "a");
+
+
+            // mark all the rooms not clean 
+
+            pthread_mutex_lock(&cleanQueueLock);
+
+            for(int i=0; i<N; i++){
+
+                int room = cleanQueue.front().first;
+                bool clean = cleanQueue.front().second;
+                cleanQueue.pop();
+                clean = 0;
+                cleanQueue.push(make_pair(room,clean));
+                 
+                // signal all the threads sleeping in the rooms to quit if any 
+                if(!available[i]){
+                    int other_guest = guest_staying[i];
+                    sem_post(&guestSleep[other_guest]);
+                }
+            }
+
+            pthread_mutex_unlock(&cleanQueueLock);
+
+            // wakeup all the cleaning threads
             for (int i = 0; i < N; ++i) sem_post(&cleanerAlloc);
             continue;
         }
@@ -89,30 +163,53 @@ void * guest_thread ( void * params )
         // push it back to the set with your priority
         if (stayedInPast[roomInfo.second] == 0 ) 
         {
-            cout << "Guest " << ID << " : staying in the room " << roomInfo.second << " first! Priority : " << roomInfo.first << endl;
+            available[roomInfo.second] = 0; 
+            stayedInPast[roomInfo.second]++;
+            guest_staying[roomInfo.second] = guestID;
+
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : staying in the room %d first! Priority : %d\n",guestID,roomInfo.second,roomInfo.first);
+            fileWrite("hotel.log", buff, "a");
+
             roomQueue.insert({myPriority, roomInfo.second});
             
             // signal guests waiting for the room
             pthread_cond_signal(&roomQueueCond);
 
-            stayedInPast[roomInfo.second]++;
-        }
 
-        // if someone is already staying in the room with less priority, make a post to the 
-        // guestSleep semaphore so the current person can leave the room
-        else if (stayedInPast[roomInfo.second] == 1)
-        {
-            cout << "Guest " << ID << " : signaling the guest in room " << roomInfo.second << " to leave! Priority : " << roomInfo.first << endl;
-            sem_post(&guestSleep[roomInfo.second]);
-            stayedInPast[roomInfo.second]++;
         }
 
         // if someone has already stayed in the room and has vacated it
         else if(( stayedInPast[roomInfo.second]==1 && roomInfo.first==0 ))
         {
+            available[roomInfo.second] = 0; 
             stayedInPast[roomInfo.second]++;
-            cout << "Guest " << ID << " : staying in the room " << roomInfo.second << " second! Priority : " << roomInfo.first << endl;
+            guest_staying[roomInfo.second] = guestID;
+
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : staying in the room %d second! Priority : %d\n",guestID,roomInfo.second,roomInfo.first);
+            fileWrite("hotel.log", buff, "a");
+            
         } 
+
+        // if someone is already staying in the room with less priority, make a post to the 
+        // guestSleep semaphore so the current person can leave the room
+        else if (stayedInPast[roomInfo.second] == 1 && !available[roomInfo.second])
+        {
+            int other_guest = guest_staying[roomInfo.second];
+            sem_post(&guestSleep[other_guest]);
+
+            available[roomInfo.second] = 0; 
+            stayedInPast[roomInfo.second]++;
+            guest_staying[roomInfo.second] = guestID;
+
+
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : interrupting guest %d in room %d\n",guestID,other_guest,roomInfo.second);
+            fileWrite("hotel.log", buff, "a");
+
+        }
+
 
         // two people have stayed, go back to wait
         else
@@ -131,23 +228,32 @@ void * guest_thread ( void * params )
         time_t rand_time = rand() % 21 + 10;
         sleepTime.tv_sec +=  rand_time;
         timeStayed[roomInfo.second] += rand_time;
-        int res = sem_timedwait(&guestSleep[roomInfo.second], &sleepTime);
+
+
+        int res = sem_timedwait(&guestSleep[guestID], &sleepTime);
 
         // if the guest was not interrupted
         if (res == -1)
         {
-            // no one woke you up, so you woke up yourself
-            cout << "Guest " << ID << " : woke up from room " << roomInfo.second << " after " << rand_time << " seconds" << endl;
+            pthread_mutex_lock(&roomQueueLock);
 
+            // no one woke you up, so you woke up yourself
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : woke up from room %d after %ld seconds\n",guestID,roomInfo.second,rand_time);
+            fileWrite("hotel.log", buff, "a");
+        
             // wake up from sleep
             // if this guest is staying in this room for the first time, 
             // and wasn't interrupted, it would have pushed the room back to the queue
             // update the roomQueue entry with an empty room and priority 0
-            pthread_mutex_lock(&roomQueueLock);
             
+            available[roomInfo.second] = 1;
             if (roomQueue.find({myPriority, roomInfo.second}) != roomQueue.end() && stayedInPast[roomInfo.second] == 1)
             {
-                cout << "Guest " << ID << " : leaving room " << roomInfo.second << " after " << rand_time << " seconds" << endl;
+                memset(buff, 0, BUFF_SIZE);
+                sprintf(buff, "Guest %d : leaving room %d after %ld seconds\n",guestID,roomInfo.second,rand_time);
+                fileWrite("hotel.log", buff, "a");
+            
                 roomQueue.erase({myPriority, roomInfo.second});
                 roomQueue.insert({0, roomInfo.second});
                 // cout<<"Guest " << ID << " : I inserted room " << roomInfo.second <<endl;
@@ -162,12 +268,16 @@ void * guest_thread ( void * params )
         // if the guest was interrupted 
         else if (res == 0) {
             // use sem_timedwait to check if the guest was interrupted
-            cout << "Guest " << ID << " : interrupted from room " << roomInfo.second << " after " <<  sleepTime.tv_sec - time(NULL) << " seconds" << endl;
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Guest %d : interrupted from room %d after %ld seconds\n",guestID,roomInfo.second,rand_time);
+            fileWrite("hotel.log", buff, "a");
+
         }
     }
 
     pthread_exit(0);
 }
+
 
 void * cleaner_thread ( void * params )
 {
@@ -179,8 +289,13 @@ void * cleaner_thread ( void * params )
     {
         // wait for the cleanerAlloc semaphore to be posted
         sem_wait(&cleanerAlloc);
+        char* buff = new char[BUFF_SIZE];
+
         
-        cout << "Cleaner " << ID << " : started" << endl;
+        memset(buff, 0, BUFF_SIZE);
+        sprintf(buff, "Cleaner %s : started\n",ID.c_str());
+        fileWrite("hotel.log", buff, "a");
+
 
         // lock the cleanQueueLock
         pthread_mutex_lock(&cleanQueueLock);
@@ -189,7 +304,10 @@ void * cleaner_thread ( void * params )
         int room = cleanQueue.front().first;
         bool clean = cleanQueue.front().second;
 
-        cout << "Cleaner " << ID << " : cleaning room " << room << endl;
+        memset(buff, 0, BUFF_SIZE);
+        sprintf(buff, "Cleaner %s : cleaning room %d\n",ID.c_str(),room);
+        fileWrite("hotel.log", buff, "a");
+
         cleanQueue.pop();
 
 
@@ -199,7 +317,11 @@ void * cleaner_thread ( void * params )
         // clean the room : wait for (lambda = 1.250) * timeStayed[room] seconds
         int clean_time = 1.250 * (float)timeStayed[room];
         sleep(clean_time);
-        cout << "Cleaner " << ID << " : cleaned room " << room <<",time taken  "<< clean_time<< endl;
+
+        memset(buff, 0, BUFF_SIZE);
+        sprintf(buff, "Cleaner %s : cleaned room %d\n",ID.c_str(),room);
+        fileWrite("hotel.log", buff, "a");
+
 
         // lock the clean Queue
         pthread_mutex_lock(&cleanQueueLock);
@@ -215,7 +337,9 @@ void * cleaner_thread ( void * params )
 
             pthread_mutex_lock(&roomQueueLock);
 
-            cout<< "I am the last cleaner!!\n";
+            memset(buff, 0, BUFF_SIZE);
+            sprintf(buff, "Cleaner %s : I am the last cleaner!!\n",ID.c_str());
+            fileWrite("hotel.log", buff, "a");
 
             timeStayed = vector <time_t> (N, 0);
             stayedInPast = vector <int> (N, 0);
@@ -237,6 +361,7 @@ void * cleaner_thread ( void * params )
     pthread_exit(0);
 }
 
+
 // --- Main ---
 signed main()
 {
@@ -254,16 +379,22 @@ signed main()
     srand(time(NULL));
     setvbuf(stdout, NULL, _IONBF, 0);
 
+    //file open
+    fileWrite("hotel.log", "","w");
+
     // vector and queue inits
     roomLocks = vector <pthread_mutex_t> (N, PTHREAD_MUTEX_INITIALIZER);
     timeStayed = vector <time_t> (N, 0);
     stayedInPast = vector <int> (N, 0);
-    guestSleep = new sem_t [N];
+    available = vector<bool> (N,1);
+    guestSleep = new sem_t [Y];
+    guest_staying = vector <int> (Y, -1);
+
     for (int i = 0; i < N; ++i) roomQueue.insert({0, i});
     for (int i = 0; i < N; ++i) cleanQueue.push({i,0});
 
     // semaphore inits
-    for (int i = 0; i < N; ++i) sem_init(&guestSleep[i], 0, 0);
+    for (int i = 0; i < Y; ++i) sem_init(&guestSleep[i], 0, 0);
     sem_init(&roomsAlloc, 0, 2 * N);
     sem_init(&cleanerAlloc, 0, 0);
 
@@ -273,15 +404,25 @@ signed main()
     // Creating threads for cleaner and guests
     cleaner_t = new pthread_t[X];
     guest_t = new pthread_t[Y];
-    for ( int i = 0; i < Y; i++ ) pthread_create( & guest_t[i], NULL, guest_thread, NULL );
-    for ( int i = 0; i < X; i++ ) pthread_create( & cleaner_t[i], NULL, cleaner_thread, NULL );
+    int indx = 0;
+    while(indx < Y)
+    {
+        // char c[1];
+        // c[0] = (char) i;
+         pthread_create( & guest_t[indx], NULL, guest_thread,(void*)(&guest_t[indx]) );
+         indx++;
+    }
+    for ( int i = 0; i < X; i++ ) {
+        pthread_create( & cleaner_t[i], NULL, cleaner_thread, NULL );
+
+    }   
 
     //  Waiting for threads to finish
     for ( int i = 0; i < X; i++ ) pthread_join( cleaner_t[i], NULL );
     for ( int i = 0; i < Y; i++ ) pthread_join( guest_t[i], NULL );
 
     // Destroying semaphores
-    for (int i = 0; i < N; ++i) sem_destroy(&guestSleep[i]);
+    for (int i = 0; i < Y; ++i) sem_destroy(&guestSleep[i]);
     sem_destroy(&roomsAlloc);
 
     // Destroying mutexes and cond
